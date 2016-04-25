@@ -19,8 +19,10 @@ Check [index.js](https://github.com/maxs15/react-native-modalbox/blob/master/Exa
 | :------------ |:---------------:| :---------------:| :-----|
 | isOpen | false | `bool` | Open/close the modal, optional, you can use the open/close methods instead  |
 | isDisabled | false | `bool` | Disable any action on the modal (open, close, swipe)  |
-| backdropPressToClose | true | `bool` | Close the the modal by pressing on the backdrop |
-| swipeToClose | true | `bool` | Set to `true` to enable the swipe down to close feature |
+| backdropPressToClose | true | `bool` | Close the the modal by pressing on the backdrop - do not enable simultaneously with `backdropPressToDock` |
+| backdropPressToDock | false | `bool` | Dock the modal by pressing on the backdrop - do not enable simultaneously with `backdropPressToClose` |
+| swipeToClose | true | `bool` | Set to `true` to enable the swipe down to close feature - do not enable simultaneously with `swipeToDock` |
+| swipeToDock | false | `bool` | Set to `true` to enable the swipe down to dock feature - do not enable simultaneously with `swipeToClose` |
 | swipeThreshold | 50 | `number` | The threshold to reach in pixels to close the modal |
 | swipeArea | - | `number` | The height in pixels of the swipeable area, window height by default |
 | position | center | `string` | Control the modal position using `top` or `center` or `bottom`
@@ -28,6 +30,7 @@ Check [index.js](https://github.com/maxs15/react-native-modalbox/blob/master/Exa
 | backdropOpacity | 0.5| `number` | Opacity of the backdrop
 | backdropColor | black| `bool` | backgroundColor of the backdrop
 | backdropContent | null| `ReactElement` | Add an element in the backdrop (a close button for example)
+| dockHeight | 50 | `number` | The height in pixels of the visible amount when docked
 | animationDuration | 400| `number` | Duration of the animation
 
 ## Events
@@ -35,13 +38,15 @@ Check [index.js](https://github.com/maxs15/react-native-modalbox/blob/master/Exa
 | Prop  | Params  | Description |
 | :------------ |:---------------:| :---------------:|
 | onClosed | - | When the modal is close and the animation is done |
+| onDocked | - | When the modal is docked and the animation is done |
 | onOpened | - | When the modal is open and the animation is done |
 | onClosingState | state `bool` | When the state of the swipe to close feature has changed (usefull to change the content of the modal, display a message for example) |
 
 ## Methods
-These methods are optional, you can use the isOpen property instead   
+These methods are optional, you can use the isOpen or isDocked properties instead
 
 | Prop  | Params  | Description |
 | :------------ |:---------------:| :---------------:|
 | open | - | Open the modal |
+| dock | - | Dock the modal |
 | close | - | Close the modal |
