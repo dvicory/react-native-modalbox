@@ -36,10 +36,13 @@ var styles = StyleSheet.create({
 var ModalBox = React.createClass({
 
   propTypes: {
+    isDocked: React.PropTypes.bool,
     isOpen: React.PropTypes.bool,
     isDisabled: React.PropTypes.bool,
     backdropPressToClose: React.PropTypes.bool,
+    backdropPressToDock: React.PropTypes.bool,
     swipeToClose: React.PropTypes.bool,
+    swipeToDock: React.PropTypes.bool,
     swipeThreshold: React.PropTypes.number,
     swipeArea: React.PropTypes.number,
     position: React.PropTypes.string,
@@ -47,9 +50,11 @@ var ModalBox = React.createClass({
     backdropOpacity: React.PropTypes.number,
     backdropColor: React.PropTypes.string,
     backdropContent: React.PropTypes.element,
+    dockHeight: React.PropTypes.number,
     animationDuration: React.PropTypes.number,
 
     onClosed: React.PropTypes.func,
+    onDocked: React.PropTypes.func,
     onOpened: React.PropTypes.func,
     onClosingState: React.PropTypes.func,
   },
@@ -57,13 +62,16 @@ var ModalBox = React.createClass({
   getDefaultProps: function () {
     return {
       backdropPressToClose: true,
+      backdropPressToDock: false,
       swipeToClose: true,
+      swipeToDock: false,
       swipeThreshold: 50,
       position: "center",
       backdrop: true,
       backdropOpacity: 0.5,
       backdropColor: "black",
       backdropContent: null,
+      dockHeight: 50,
       animationDuration: 400
     };
   },
@@ -72,8 +80,10 @@ var ModalBox = React.createClass({
     return {
       position: new Animated.Value(screen.height),
       backdropOpacity: new Animated.Value(0),
+      isDocked: false,
       isOpen: false,
       isAnimateClose: false,
+      isAnimateDock: false,
       isAnimateOpen: false,
       swipeToClose: false,
       height: screen.height,
@@ -94,9 +104,11 @@ var ModalBox = React.createClass({
   },
 
   handleOpenning: function(props) {
-    if (typeof props.isOpen == "undefined") return;
+    if (typeof props.isOpen == "undefined" && typeof props.isDocked == "undefined") return;
     if (props.isOpen)
       this.open();
+    else if (props.isDocked && !props.isOpen)
+      this.dock();
     else
       this.close();
   },
@@ -161,6 +173,7 @@ var ModalBox = React.createClass({
    * Open animation for the modal, will move up
    */
   animateOpen: function() {
+    this.stopAnimateDock();
     this.stopAnimateClose();
 
     // Backdrop fadeIn
@@ -181,8 +194,49 @@ var ModalBox = React.createClass({
     );
     this.state.animOpen.start(() => {
       this.state.isAnimateOpen = false;
+      this.state.isDocked = false;
       this.state.isOpen = true;
+      this.setState({});
       if (this.props.onOpened) this.props.onOpened();
+    });
+    this.setState({});
+  },
+
+  /*
+   * Stop docking animation
+   */
+  stopAnimateDock: function() {
+    if (this.state.isAnimateDock) {
+      if (this.state.animDock) this.state.animDock.stop();
+      this.state.isAnimateDock = false;
+    }
+  },
+
+  /*
+   * Dock animation for the modal, will move down
+   */
+  animateDock: function() {
+    this.stopAnimateOpen();
+    this.stopAnimateClose();
+
+    // Backdrop fadeout
+    if (this.props.backdrop)
+      this.animateBackdropClose();
+
+    this.state.isAnimateDock = true;
+    this.state.animDock = Animated.timing(
+      this.state.position,
+      {
+        toValue: this.state.containerHeight - this.props.dockHeight,
+        duration: this.props.animationDuration
+      }
+    );
+    this.state.animDock.start(() => {
+      this.state.isAnimateDock = false;
+      this.state.isOpen = false;
+      this.state.isDocked = true;
+      this.setState({});
+      if (this.props.onDocked) this.props.onDocked();
     });
   },
 
@@ -200,6 +254,7 @@ var ModalBox = React.createClass({
    * Close animation for the modal, will move down
    */
   animateClose: function() {
+    this.stopAnimateDock();
     this.stopAnimateOpen();
 
     // Backdrop fadeout
@@ -217,6 +272,7 @@ var ModalBox = React.createClass({
     this.state.animClose.start(() => {
       this.state.isAnimateClose = false;
       this.state.isOpen = false;
+      this.state.isDocked = false;
       this.setState({});
       if (this.props.onClosed) this.props.onClosed();
     });
@@ -241,17 +297,41 @@ var ModalBox = React.createClass({
 
   /*
    * Create the pan responder to detect gesture
-   * Only used if swipeToClose is enabled
+   * Only used if swipeToClose or swipeToDock is enabled
    */
   createPanResponder: function() {
     var closingState = false;
     var inSwipeArea  = false;
 
+    var _determineAnimateAction = (state) => {
+      var action = false;
+      if (this.state.isDocked && state.dy < 0 && -state.dy > this.props.swipeThreshold) {
+        action = 'open';
+      } else if (this.state.isDocked && state.dy > 0 && (state.dy > this.props.dockHeight / 2 || state.dy > this.props.swipeThreshold)) {
+        action = 'close';
+      } else if (this.state.isOpen && state.dy > this.props.swipeThreshold) {
+        if (this.props.swipeToClose) {
+          action = 'close';
+        } else if (this.props.swipeToDock) {
+          action = 'dock';
+        }
+      } else if (this.state.isDocked) {
+        action = 'dock';
+      }
+
+      return action;
+    }
+
     var onPanRelease = (evt, state) => {
       if (!inSwipeArea) return;
       inSwipeArea = false;
-      if (state.dy > this.props.swipeThreshold)
+      var thresholdResult = _determineAnimateAction(state);
+      if (thresholdResult === 'close')
         this.animateClose();
+      else if (thresholdResult === 'open')
+        this.animateOpen();
+      else if (thresholdResult === 'dock')
+        this.animateDock();
       else
         this.animateOpen();
     };
@@ -259,18 +339,24 @@ var ModalBox = React.createClass({
     var animEvt = Animated.event([null, {customY: this.state.position}]);
 
     var onPanMove = (evt, state) => {
-      var newClosingState = (state.dy > this.props.swipeThreshold) ? true : false;
-      if (state.dy < 0) return;
+      var newClosingState = _determineAnimateAction(state) ? true : false;
+      if (!this.state.isDocked && state.dy < 0) return;
       if (newClosingState != closingState && this.props.onClosingState)
         this.props.onClosingState(newClosingState);
       closingState = newClosingState;
-      state.customY = state.dy + this.state.positionDest;
+      if (!this.state.isDocked) {
+        state.customY = state.dy + this.state.positionDest;
+      } else {
+        state.customY = this.state.containerHeight + state.dy - this.state.positionDest;
+      }
 
       animEvt(evt, state);
     };
 
     var onPanStart = (evt, state) => {
-      if (!this.props.swipeToClose || this.props.isDisabled || (this.props.swipeArea && (evt.nativeEvent.pageY - this.state.positionDest) > this.props.swipeArea)) {
+      if (this.props.swipeToDock && this.state.isDocked && !this.props.isDisabled) {
+        // if docked you can swipe
+      } else if ((!this.props.swipeToClose && !this.props.swipeToDock) || this.props.isDisabled || (this.props.swipeArea && (evt.nativeEvent.pageY - this.state.positionDest) > this.props.swipeArea)) {
         inSwipeArea = false;
         return false;
       }
@@ -313,8 +399,16 @@ var ModalBox = React.createClass({
     var coords = {};
 
     // Fixing the position if the modal was already open or an animation was in progress
-    if (this.state.isInitialized && (this.state.isOpen || this.state.isAnimateOpen || this.state.isAnimateClose)) {
-      var position = this.state.isOpen ? modalPosition : this.state.containerHeight;
+    if (this.state.isInitialized && (this.state.isOpen || this.state.isDocked || this.state.isAnimateOpen || this.state.isAnimateDock || this.state.isAnimateClose)) {
+      var position;
+      if (this.state.isOpen) {
+        position = modalPosition;
+      } else if (this.state.isDocked) {
+        // position = this.state.containerHeight - this.props.dockHeight;
+        position = this.props.dockHeight;
+      } else {
+        position = this.state.containerHeight;
+      }
 
       // Checking if a animation was in progress
       if (this.state.isAnimateOpen) {
@@ -323,6 +417,9 @@ var ModalBox = React.createClass({
       } else if (this.state.isAnimateClose) {
         position = this.state.containerHeight;
         this.stopAnimateClose();
+      } else if (this.state.isAnimateDock) {
+        position = this.props.dockHeight;
+        this.stopAnimateDock();
       }
       this.state.position.setValue(position);
       coords = {positionDest: position};
@@ -342,9 +439,11 @@ var ModalBox = React.createClass({
   renderBackdrop: function(size) {
     var backdrop  = [];
 
-    if (this.props.backdrop) {
+    if (this.props.backdrop && (this.state.isOpen || this.state.isAnimateOpen)) {
+      var onPressHandler = (this.props.backdropPressToClose ? this.close : null) || (this.props.backdropPressToDock ? this.dock : null);
+
       backdrop = (
-        <TouchableWithoutFeedback onPress={this.props.backdropPressToClose ? this.close : null}>
+        <TouchableWithoutFeedback onPress={onPressHandler}>
           <Animated.View style={[styles.absolute, size, {opacity: this.state.backdropOpacity}]}>
             <View style={[styles.absolute, {backgroundColor:this.props.backdropColor, opacity: this.props.backdropOpacity}]}/>
             {this.props.backdropContent || []}
@@ -360,7 +459,7 @@ var ModalBox = React.createClass({
    * Render the component
    */
   render: function() {
-    var visible     = this.state.isOpen || this.state.isAnimateOpen || this.state.isAnimateClose;
+    var visible     = this.state.isOpen || this.state.isDocked || this.state.isAnimateOpen || this.state.isAnimateDock || this.state.isAnimateClose;
     var size        = {height: this.state.containerHeight, width: this.state.containerWidth};
     var offsetX     = (this.state.containerWidth - this.state.width) / 2;
     var backdrop    = this.renderBackdrop(size);
@@ -384,7 +483,7 @@ var ModalBox = React.createClass({
 
   open: function() {
     if (this.props.isDisabled) return;
-    if (!this.state.isAnimateOpen && (!this.state.isOpen || this.state.isAnimateClose)) {
+    if (!this.state.isAnimateOpen && (!this.state.isOpen || this.state.isAnimateClose || this.state.isAnimateDock)) {
       this.onViewLayoutCalculated = () => {
         this.setState({});
         this.animateOpen();
@@ -393,9 +492,16 @@ var ModalBox = React.createClass({
     }
   },
 
+  dock: function() {
+    if (this.props.isDisabled) return;
+    if (!this.state.isAnimateDock && (!this.state.isDocked || this.state.isAnimateOpen || this.state.isAnimateClose)) {
+      this.animateDock();
+    }
+  },
+
   close: function() {
     if (this.props.isDisabled) return;
-    if (!this.state.isAnimateClose && (this.state.isOpen || this.state.isAnimateOpen)) {
+    if (!this.state.isAnimateClose && (this.state.isOpen || this.state.isDocked || this.state.isAnimateOpen || this.state.isAnimateDock)) {
       delete this.onViewLayoutCalculated;
       this.animateClose();
     }
